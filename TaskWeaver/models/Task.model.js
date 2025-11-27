@@ -31,20 +31,42 @@ const taskSchema = new mongoose.Schema({
     },
     assignedTo: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+        ref: 'Employee',
         required: false
     },
     assignedBy: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+        ref: 'Employee',
         required: true
     },
-    feedback: {
-        rating: Number,
+    progress: [{
+        update: {
+            type: String,
+            required: true
+        },
+        submittedAt: {
+            type: Date,
+            default: Date.now
+        },
+        submittedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Employee',
+            required: true
+        }
+    }],
+    adminRating: {
+        rating: {
+            type: Number,
+            min: 1,
+            max: 5
+        },
         comments: String,
-        submittedAt: Date
+        ratedAt: Date,
+        ratedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Employee'
+        }
     },
-
     comments: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Comment'

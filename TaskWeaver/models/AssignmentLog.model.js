@@ -8,12 +8,12 @@ const assignmentLogSchema = new mongoose.Schema({
   },
   assignedTo: { 
     type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
+    ref: 'Employee', 
     required: true 
   },
   assignedBy: { 
     type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
+    ref: 'Employee', 
     required: true 
   },
   assignedAt: {

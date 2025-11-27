@@ -1,13 +1,57 @@
 import express from 'express';
 import Task from '../models/Task.js';
-import User from '../models/User.js';
+import Employee from '../models/Employee.js';
 import TaskAssignmentLog from '../models/TaskAssignmentLog.js';
-import { authenticateToken, requireAdmin } from '../middleware/authMiddleware.js';
+import { verifyJWT, requireAdmin } from '../middleware/Auth.middleware.js';
 
 const router = express.Router();
 
+// SJF Algorithm Helper Function
+async function findBestEmployeeForTask(task) {
+  try {
+    // Get all active employees
+    const employees = await Employee.find({ 
+      isActive: true, 
+      role: 'employee' 
+    }).select('employeename profile department skills');
+
+    if (employees.length === 0) {
+      return null;
+    }
+
+    const employeeWorkloads = await Promise.all(
+      employees.map(async (employee) => {
+        // Calculate current workload (tasks in progress or assigned)
+        const currentTasks = await Task.find({
+          assignedTo: employee._id,
+          status: { $in: ['assigned', 'in-progress'] }
+        });
+
+        const currentWorkload = currentTasks.length;
+
+        // Calculate priority score (lower workload = higher priority for SJF)
+        const priorityScore = 1 / (1 + currentWorkload);
+
+        return {
+          employee,
+          currentWorkload,
+          priorityScore
+        };
+      })
+    );
+
+    // Sort by priority score (descending) - SJF: shortest job first
+    employeeWorkloads.sort((a, b) => b.priorityScore - a.priorityScore);
+
+    return employeeWorkloads[0]; // Return the best match
+
+  } catch (error) {
+    console.error('SJF algorithm error:', error);
+    return null;
+  }
+}
 // Create new task (Admin only)
-router.post('/', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/', verifyJWT, requireAdmin, async (req, res) => {
   try {
     const {
       title,
@@ -34,7 +78,7 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
       priority: priority || 'medium',
       dueDate: dueDate ? new Date(dueDate) : undefined,
       assignedTo: assignedTo || undefined,
-      assignedBy: req.user.userId,
+      assignedBy: req.employee.employeeId,
       status: assignedTo ? 'assigned' : 'pending'
     });
 
@@ -45,7 +89,7 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
       const assignmentLog = new TaskAssignmentLog({
         taskId: newTask._id,
         assignedTo,
-        assignedBy: req.user.userId,
+        assignedBy: req.employee.employeeId,
         reason: 'Manual assignment during task creation',
         status: 'assigned'
       });
@@ -53,8 +97,8 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     // Populate for response
-    await newTask.populate('assignedTo', 'username profile department');
-    await newTask.populate('assignedBy', 'username profile');
+    await newTask.populate('assignedTo', 'employeename profile department');
+    await newTask.populate('assignedBy', 'employeename profile');
 
     res.status(201).json({
       success: true,
@@ -70,9 +114,8 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     });
   }
 });
-
 // Get all tasks with filtering
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', verifyJWT, async (req, res) => {
   try {
     const {
       status,
@@ -81,12 +124,11 @@ router.get('/', authenticateToken, async (req, res) => {
       search
     } = req.query;
 
-    // Build filter object
     const filter = {};
 
-    // If user is employee, only show their tasks
-    if (req.user.role === 'user') {
-      filter.assignedTo = req.user.userId;
+    // If employee is employee, only show their tasks
+    if (req.employee.role === 'employee') {
+      filter.assignedTo = req.employee.employeeId;
     } else if (assignedTo) {
       // Admin can filter by assignedTo
       filter.assignedTo = assignedTo;
@@ -108,8 +150,8 @@ router.get('/', authenticateToken, async (req, res) => {
     }
 
     const tasks = await Task.find(filter)
-      .populate('assignedTo', 'username profile department')
-      .populate('assignedBy', 'username profile')
+      .populate('assignedTo', 'employeename profile department')
+      .populate('assignedBy', 'employeename profile')
       .sort({ createdAt: -1 });
 
     res.json({
@@ -129,11 +171,11 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Get task by ID
-router.get('/:id', authenticateToken, async (req, res) => {
+router.get('/:id', verifyJWT, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('assignedTo', 'username email profile department skills')
-      .populate('assignedBy', 'username profile')
+      .populate('assignedTo', 'employeename email profile department skills')
+      .populate('assignedBy', 'employeename profile')
       .populate('comments');
 
     if (!task) {
@@ -143,8 +185,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
       });
     }
 
-    // Check if user has access to this task
-    if (req.user.role === 'user' && task.assignedTo?._id.toString() !== req.user.userId) {
+    // Check if employee has access to this task
+    if (req.employee.role === 'employee' && task.assignedTo?._id.toString() !== req.employee.employeeId) {
       return res.status(403).json({
         success: false,
         message: 'Access denied. You can only view tasks assigned to you.'
@@ -173,9 +215,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
     });
   }
 });
-
 // Update task
-router.put('/:id', authenticateToken, async (req, res) => {
+router.put('/:id', verifyJWT, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id);
 
@@ -187,17 +228,17 @@ router.put('/:id', authenticateToken, async (req, res) => {
     }
 
     // Check permissions
-    if (req.user.role === 'user' && task.assignedTo?.toString() !== req.user.userId) {
+    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee.employeeId) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied. You can only update tasks assigned to you.'
+        message: 'Access denied.'
       });
     }
 
     const updateData = { ...req.body };
     
     // Employees can only update status and feedback
-    if (req.user.role === 'user') {
+    if (req.employee.role === 'employee') {
       const allowedFields = ['status', 'feedback'];
       Object.keys(updateData).forEach(key => {
         if (!allowedFields.includes(key)) {
@@ -207,12 +248,12 @@ router.put('/:id', authenticateToken, async (req, res) => {
     }
 
     // If admin is reassigning task
-    if (req.user.role === 'admin' && updateData.assignedTo) {
+    if (req.employee.role === 'admin' && updateData.assignedTo) {
       // Create assignment log for reassignment
       const assignmentLog = new TaskAssignmentLog({
         taskId: task._id,
         assignedTo: updateData.assignedTo,
-        assignedBy: req.user.userId,
+        assignedBy: req.employee.employeeId,
         reason: 'Task reassigned by admin',
         status: 'reassigned'
       });
@@ -226,8 +267,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
       { $set: updateData },
       { new: true }
     )
-      .populate('assignedTo', 'username profile department')
-      .populate('assignedBy', 'username profile');
+      .populate('assignedTo', 'employeename profile department')
+      .populate('assignedBy', 'employeename profile');
 
     res.json({
       success: true,
@@ -251,9 +292,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
     });
   }
 });
-
 // Delete task (Admin only)
-router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
+router.delete('/:id', verifyJWT, requireAdmin, async (req, res) => {
   try {
     const deletedTask = await Task.findByIdAndDelete(req.params.id);
 
@@ -286,9 +326,8 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     });
   }
 });
-
 // Assign task to employee (Admin only - using SJF algorithm)
-router.post('/:id/assign', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/:id/assign', verifyJWT, requireAdmin, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id);
 
@@ -311,13 +350,13 @@ router.post('/:id/assign', authenticateToken, requireAdmin, async (req, res) => 
       const assignmentLog = new TaskAssignmentLog({
         taskId: task._id,
         assignedTo,
-        assignedBy: req.user.userId,
+        assignedBy: req.employee.employeeId,
         reason: 'Manual assignment by admin',
         status: 'assigned'
       });
       await assignmentLog.save();
 
-      await task.populate('assignedTo', 'username profile department');
+      await task.populate('assignedTo', 'employeename profile department');
 
       return res.json({
         success: true,
@@ -345,17 +384,17 @@ router.post('/:id/assign', authenticateToken, requireAdmin, async (req, res) => 
       const assignmentLog = new TaskAssignmentLog({
         taskId: task._id,
         assignedTo: bestEmployee.employee._id,
-        assignedBy: req.user.userId,
+        assignedBy: req.employee.employeeId,
         reason: `Auto-assigned using SJF algorithm. Workload score: ${bestEmployee.priorityScore.toFixed(2)}`,
         status: 'assigned'
       });
       await assignmentLog.save();
 
-      await task.populate('assignedTo', 'username profile department');
+      await task.populate('assignedTo', 'employeename profile department');
 
       return res.json({
         success: true,
-        message: `Task auto-assigned to ${bestEmployee.employee.username}`,
+        message: `Task auto-assigned to ${bestEmployee.employee.employeename}`,
         data: task,
         assignmentDetails: {
           employee: bestEmployee.employee,
@@ -387,7 +426,7 @@ router.post('/:id/assign', authenticateToken, requireAdmin, async (req, res) => 
 });
 
 // Update task status
-router.patch('/:id/status', authenticateToken, async (req, res) => {
+router.patch('/:id/status', verifyJWT, async (req, res) => {
   try {
     const { status } = req.body;
     const task = await Task.findById(req.params.id);
@@ -400,10 +439,10 @@ router.patch('/:id/status', authenticateToken, async (req, res) => {
     }
 
     // Check permissions
-    if (req.user.role === 'user' && task.assignedTo?.toString() !== req.user.userId) {
+    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee.employeeId) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied. You can only update status of tasks assigned to you.'
+        message: 'Access denied.'
       });
     }
 
@@ -412,8 +451,8 @@ router.patch('/:id/status', authenticateToken, async (req, res) => {
       { status },
       { new: true }
     )
-      .populate('assignedTo', 'username profile department')
-      .populate('assignedBy', 'username profile');
+      .populate('assignedTo', 'employeename profile department')
+      .populate('assignedBy', 'employeename profile');
 
     res.json({
       success: true,
@@ -438,10 +477,17 @@ router.patch('/:id/status', authenticateToken, async (req, res) => {
   }
 });
 
-// Add documents to task
-router.post('/:id/documents', authenticateToken, async (req, res) => {
+// Add progress update to task (Employee only)
+router.post('/:id/progress', verifyJWT, async (req, res) => {
   try {
-    const { documents } = req.body;
+    const { progress } = req.body;
+
+    if (!progress) {
+      return res.status(400).json({
+        success: false,
+        message: 'Progress update is required'
+      });
+    }
 
     const task = await Task.findById(req.params.id);
 
@@ -452,28 +498,35 @@ router.post('/:id/documents', authenticateToken, async (req, res) => {
       });
     }
 
-    // Check permissions
-    if (req.user.role === 'user' && task.assignedTo?.toString() !== req.user.userId) {
+    // Check if employee is assigned to this task
+    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee.employeeId) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied. You can only add documents to tasks assigned to you.'
+        message: 'Access denied. You can only update progress on tasks assigned to you.'
       });
     }
 
-    // Add new documents to the existing array
-    task.document.push(...documents);
+    // Add progress update
+    task.progress.push({
+      progress,
+      submittedBy: req.employee.employeeId,
+      submittedAt: new Date()
+    });
+
     await task.save();
 
+    // Populate for response
+    await task.populate('progress.submittedBy', 'username profile');
     await task.populate('assignedTo', 'username profile department');
 
     res.json({
       success: true,
-      message: 'Documents added successfully',
+      message: 'Progress updated successfully',
       data: task
     });
 
   } catch (error) {
-    console.error('Add documents error:', error);
+    console.error('Add progress error:', error);
     
     if (error.name === 'CastError') {
       return res.status(400).json({
@@ -484,15 +537,22 @@ router.post('/:id/documents', authenticateToken, async (req, res) => {
     
     res.status(500).json({
       success: false,
-      message: 'Internal server error while adding documents'
+      message: 'Internal server error while updating progress'
     });
   }
 });
 
-// Submit feedback for task
-router.post('/:id/feedback', authenticateToken, async (req, res) => {
+// Rate completed task (Admin only)
+router.post('/:id/rating', verifyJWT, requireAdmin, async (req, res) => {
   try {
     const { rating, comments } = req.body;
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rating is required and must be between 1 and 5'
+      });
+    }
 
     const task = await Task.findById(req.params.id);
 
@@ -503,31 +563,37 @@ router.post('/:id/feedback', authenticateToken, async (req, res) => {
       });
     }
 
-    // Check permissions - only assigned employee can submit feedback
-    if (req.user.role === 'user' && task.assignedTo?.toString() !== req.user.userId) {
-      return res.status(403).json({
+    // Check if task is completed
+    if (task.status !== 'completed') {
+      return res.status(400).json({
         success: false,
-        message: 'Access denied. You can only submit feedback for tasks assigned to you.'
+        message: 'You can only rate completed tasks'
       });
     }
 
-    // Update feedback
-    task.feedback = {
+    // Update admin rating
+    task.adminRating = {
       rating,
-      comments,
-      submittedAt: new Date()
+      comments: comments || '',
+      ratedBy: req.employee.employeeId,
+      ratedAt: new Date()
     };
 
     await task.save();
 
+    // Populate for response
+    await task.populate('adminRating.ratedBy', 'username profile');
+    await task.populate('assignedTo', 'username profile department');
+    await task.populate('progress.submittedBy', 'username profile');
+
     res.json({
       success: true,
-      message: 'Feedback submitted successfully',
+      message: 'Task rated successfully',
       data: task
     });
 
   } catch (error) {
-    console.error('Submit feedback error:', error);
+    console.error('Rate task error:', error);
     
     if (error.name === 'CastError') {
       return res.status(400).json({
@@ -538,19 +604,18 @@ router.post('/:id/feedback', authenticateToken, async (req, res) => {
     
     res.status(500).json({
       success: false,
-      message: 'Internal server error while submitting feedback'
+      message: 'Internal server error while rating task'
     });
   }
 });
-
 // Get tasks statistics
-router.get('/stats/overview', authenticateToken, async (req, res) => {
+router.get('/stats/overview', verifyJWT, async (req, res) => {
   try {
     let filter = {};
 
-    // If user is employee, only show their stats
-    if (req.user.role === 'user') {
-      filter.assignedTo = req.user.userId;
+    // If employee is employee, only show their stats
+    if (req.employee.role === 'employee') {
+      filter.assignedTo = req.employee.employeeId;
     }
 
     const totalTasks = await Task.countDocuments(filter);
@@ -588,50 +653,5 @@ router.get('/stats/overview', authenticateToken, async (req, res) => {
     });
   }
 });
-
-// SJF Algorithm Helper Function
-async function findBestEmployeeForTask(task) {
-  try {
-    // Get all active employees
-    const employees = await User.find({ 
-      isActive: true, 
-      role: 'user' 
-    }).select('username profile department skills');
-
-    if (employees.length === 0) {
-      return null;
-    }
-
-    const employeeWorkloads = await Promise.all(
-      employees.map(async (employee) => {
-        // Calculate current workload (tasks in progress or assigned)
-        const currentTasks = await Task.find({
-          assignedTo: employee._id,
-          status: { $in: ['assigned', 'in-progress'] }
-        });
-
-        const currentWorkload = currentTasks.length;
-
-        // Calculate priority score (lower workload = higher priority for SJF)
-        const priorityScore = 1 / (1 + currentWorkload);
-
-        return {
-          employee,
-          currentWorkload,
-          priorityScore
-        };
-      })
-    );
-
-    // Sort by priority score (descending) - SJF: shortest job first
-    employeeWorkloads.sort((a, b) => b.priorityScore - a.priorityScore);
-
-    return employeeWorkloads[0]; // Return the best match
-
-  } catch (error) {
-    console.error('SJF algorithm error:', error);
-    return null;
-  }
-}
 
 export default router;

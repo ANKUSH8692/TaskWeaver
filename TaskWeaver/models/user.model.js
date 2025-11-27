@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const userSchema=new mongoose.Schema({
+const employeeSchema=new mongoose.Schema({
     firstName:{
         type:String,
         required:true
@@ -13,7 +13,7 @@ const userSchema=new mongoose.Schema({
         type:String,
         required:false
     },
-    username:{
+    employeename:{
         type:String,
         required:true,
         unique:true
@@ -29,8 +29,8 @@ const userSchema=new mongoose.Schema({
     },
     role:{
         type:String,
-        enum:['user','admin'],
-        default:'user',
+        enum:['employee','admin'],
+        default:'employee',
         required:true
     },
     
@@ -54,10 +54,10 @@ const userSchema=new mongoose.Schema({
     },
 },{timestamps:true});
 
-userSchema.index({role:1});
-userSchema.index({department:1});
+employeeSchema.index({role:1});
+employeeSchema.index({department:1});
 
-const user=mongoose.model('User',userSchema);
+const employee=mongoose.model('Employee',employeeSchema);
 
 
-export default user;
+export default employee;

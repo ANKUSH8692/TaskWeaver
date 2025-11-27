@@ -1,11 +1,11 @@
 
 import express from 'express';
-import User from '../models/user.model.js';
+import Employee from '../models/employee.model.js';
 import { verifyJWT, requireAdmin } from '../middleware/Auth.middleware.js';
 
 const router = express.Router();
 
-// Get all users
+// Get all employees
 router.get('/', verifyJWT, requireAdmin, async (req, res) => {
     try {
         const {
@@ -19,7 +19,7 @@ router.get('/', verifyJWT, requireAdmin, async (req, res) => {
 
         if (search) {
             filter.$or = [
-                { username: { $regex: search, $options: 'i' } },
+                { employeename: { $regex: search, $options: 'i' } },
                 { email: { $regex: search, $options: 'i' } },
                 { 'profile.firstName': { $regex: search, $options: 'i' } },
                 { 'profile.lastName': { $regex: search, $options: 'i' } }
@@ -39,12 +39,12 @@ router.get('/', verifyJWT, requireAdmin, async (req, res) => {
             sort: { createdAt: -1 },
             select: '-password' // Exclude password field
         };
-        const users = await User.paginate(filter, options);
+        const employees = await Employee.paginate(filter, options);
 
         res.json({
             success: true,
-            message: 'Users fetched successfully',
-            data: users
+            message: 'Employees fetched successfully',
+            data: employees
         });
     }
     catch (error) {
@@ -57,14 +57,14 @@ router.get('/', verifyJWT, requireAdmin, async (req, res) => {
 
 router.get('/:id', verifyJWT, async (req, res) => {
     try {
-        const user = await User.findById(req.params.id).select('-password');
-        if (!user) {
+        const employee = await Employee.findById(req.params.id).select('-password');
+        if (!employee) {
             return res.status(404).json({
                 success: false,
-                message: "User not found"
+                message: "Employee not found"
             });
         }
-        if(req.user.role !== 'admin' && req.user.userId !== req.params.id) {
+        if(req.employee.role !== 'admin' && req.employee.employeeId !== req.params.id) {
             return res.status(403).json({
                 success: false,
                 message: "Access denied"
@@ -72,7 +72,7 @@ router.get('/:id', verifyJWT, async (req, res) => {
         }
         res.status(200).json({
             success: true,
-            data: user
+            data: employee
         });
     }
     catch (error) {
@@ -87,21 +87,21 @@ router.post('/update-profile/:id', verifyJWT, async (req, res) => {
     try{
         const id=req.params.id;
         const updateData=req.body;
-        if(req.body.role && req.user.role!=='admin'){
+        if(req.body.role && req.employee.role!=='admin'){
             return res.status(403).json({
                 success: false,
                 message: "Only admin can update role"
             });
         }
 
-        const user=await User.findByIdAndUpdate(id,updateData,{new:true}).select('-password');
-        if(!user){
+        const employee=await Employee.findByIdAndUpdate(id,updateData,{new:true}).select('-password');
+        if(!employee){
             return  res.status(404).json({
                 success: false,
-                message: "User not found"
+                message: "Employee not found"
             });
         }
-        if(req.user.role !== 'admin' && req.user.userId !== req.params.id) {
+        if(req.employee.role !== 'admin' && req.employee.employeeId !== req.params.id) {
             return res.status(403).json({
                 success: false,
                 message: "Access denied"
@@ -110,7 +110,7 @@ router.post('/update-profile/:id', verifyJWT, async (req, res) => {
         res.status(200).json({
             success: true,
             message: "Profile updated successfully",
-            data: user
+            data: employee
         });
 
     }catch(err){
@@ -123,16 +123,16 @@ router.post('/update-profile/:id', verifyJWT, async (req, res) => {
 
 router.delete('/:id', verifyJWT, requireAdmin, async (req, res) => {
     try {
-        const user = await User.findByIdAndUpdate(req.params.id,{ new: true });
-        if (!user) {
+        const employee = await Employee.findByIdAndUpdate(req.params.id,{ new: true });
+        if (!employee) {
             return res.status(404).json({
                 success: false,
-                message: "User not found"
+                message: "Employee not found"
             });
         }
         res.status(200).json({
             success: true,
-            message: "User deactivated successfully"
+            message: "Employee deactivated successfully"
         });
     } catch (error) {
         res.status(500).json({
@@ -145,12 +145,12 @@ router.delete('/:id', verifyJWT, requireAdmin, async (req, res) => {
 
 router.get('/stats/overview', verifyJWT, requireAdmin, async (req, res) => {
   try {
-    const totalUsers = await User.countDocuments({ isActive: true });
-    const adminUsers = await User.countDocuments({ role: 'admin', isActive: true });
-    const employeeUsers = await User.countDocuments({ role: 'user', isActive: true });
+    const totalEmployees = await Employee.countDocuments({ isActive: true });
+    const adminEmployees = await Employee.countDocuments({ role: 'admin', isActive: true });
+    const employeeEmployees = await Employee.countDocuments({ role: 'employee', isActive: true });
     
-    // Get users by department
-    const usersByDepartment = await User.aggregate([
+    // Get employees by department
+    const employeesByDepartment = await Employee.aggregate([
       { $match: { isActive: true } },
       { $group: { _id: '$department', count: { $sum: 1 } } }
     ]);
@@ -159,28 +159,28 @@ router.get('/stats/overview', verifyJWT, requireAdmin, async (req, res) => {
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
     
-    const recentRegistrations = await User.countDocuments({
+    const recentRegistrations = await Employee.countDocuments({
       isActive: true,
       createdAt: { $gte: oneWeekAgo }
     });
 
     res.json({
       success: true,
-      message: 'User statistics fetched successfully',
+      message: 'Employee statistics fetched successfully',
       data: {
-        totalUsers,
-        adminUsers,
-        employeeUsers,
-        usersByDepartment,
+        totalEmployees,
+        adminEmployees,
+        employeeEmployees,
+        employeesByDepartment,
         recentRegistrations
       }
     });
 
   } catch (error) {
-    console.error('Get user stats error:', error);
+    console.error('Get employee stats error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error while fetching user statistics'
+      message: 'Internal server error while fetching employee statistics'
     });
   }
 });
@@ -189,23 +189,23 @@ router.get('/department/:department', verifyJWT, async (req, res) => {
   try {
     const { department } = req.params;
     
-    const users = await User.find({ 
+    const employees = await Employee.find({ 
       department,
       isActive: true 
     }).select('-password').sort({ 'profile.firstName': 1 });
 
     res.json({
       success: true,
-      message: `Users in ${department} department fetched successfully`,
-      data: users,
-      count: users.length
+      message: `Employees in ${department} department fetched successfully`,
+      data: employees,
+      count: employees.length
     });
 
   } catch (error) {
-    console.error('Get users by department error:', error);
+    console.error('Get employees by department error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error while fetching users by department'
+      message: 'Internal server error while fetching employees by department'
     });
   }
 });

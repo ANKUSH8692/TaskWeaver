@@ -1,5 +1,5 @@
 import express from 'express';
-import User from '../models/user.model.js';
+import Employee from '../models/employee.model.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import cloudinary from '../db/cloudinary.js';
@@ -8,8 +8,8 @@ import { ApiError } from '../utils/ApiError.js';
 
 const router = express.Router();
 
-const tokenGenerator = (userId) => {
-    return jwt.sign({ _id: userId }, process.env.ACCESS_TOKEN_SECRET||"hi", { expiresIn: '1d' });
+const tokenGenerator = (employeeId) => {
+    return jwt.sign({ _id: employeeId }, process.env.ACCESS_TOKEN_SECRET||"hi", { expiresIn: '1d' });
 }
 
 router.post('/register', multerSorage.single('profile_picture'),async (req, res) => {
@@ -17,71 +17,68 @@ router.post('/register', multerSorage.single('profile_picture'),async (req, res)
         const {
             firstName,
             lastName,
-            username,
+            employeename,
             email,
             password,
             department,
             position,
         } = req.body;
 
-        if ([firstName, lastName, username, email, password].some((field) => !field.trim() === "")) {
+        if ([firstName, lastName, employeename, email, password].some((field) => !field.trim() === "")) {
             throw new ApiError(400, "All fields are required");
         }
 
-        const existingUser = await User.findOne({
-            $or: [{ username }, { email }]
+        const existingEmployee = await Employee.findOne({
+            $or: [{ employeename }, { email }]
         });
 
-        if (existingUser) {
-            throw new ApiError(409, "Username or email already in use");
+        if (existingEmployee) {
+            throw new ApiError(409, "Employeename or email already in use");
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const skills = req.body.skills.split(',').map((skill) => skill.trim()).filter((skill) => skill !== "");
-        const image = req.body.profile_picture;
         
         let profilePicturePath="https://drive.google.com/file/d/1AHSHwtmStNIcEzCsRrKkXOqA2Lbi_dVT/view?usp=sharing";
-        if(image){
-            const dataUri = `data:${image.mimetype};base64,${image.buffer.toString('base64')}`;
-            
-            try{
-                profilePicturePath = await cloudinary.uploader.upload(dataUri, {
-              folder: 'Chat-Box',
-              format: 'webp'
-            });
-            }catch(err){
+        if (req.file) {
+            try {
+                const dataUri = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+                const uploadResult = await cloudinary.uploader.upload(dataUri, {
+                    folder: 'Chat-Box',
+                    format: 'webp'
+                });
+                profilePictureUrl = uploadResult.secure_url;
+            } catch (err) {
                 throw new ApiError(500, "Image upload failed");
             }
-            console.log(profilePicturePath);
-            
         }
         
-        const newUser = new User({
+        const newEmployee = new Employee({
             firstName,
             lastName,
-            username,
+            employeename,
             email,
             password: hashedPassword,
             profile_picture:profilePicturePath.secure_url,
-            role:'user',
+            role:'employee',
             department,
             DateOfJoining:new Date(),
             position,
             skills
         });
 
-        const savedUser = await newUser.save();
-        const accessToken = tokenGenerator(savedUser._id);
+        const savedEmployee = await newEmployee.save();
+        const accessToken = tokenGenerator(savedEmployee._id);
 
         res.status(201).json({
             success: true,
-            message: "User registered successfully",
+            message: "Employee registered successfully",
             data: {
-                _id: savedUser._id,
-                username: savedUser.username,
-                email: savedUser.email,
-                role: savedUser.role||'user',
+                _id: savedEmployee._id,
+                employeename: savedEmployee.employeename,
+                email: savedEmployee.email,
+                role: savedEmployee.role||'employee',
                 DateOfJoining:new Date(),
                 accessToken
             }
@@ -93,32 +90,32 @@ router.post('/register', multerSorage.single('profile_picture'),async (req, res)
 
 router.post('login', async (req, res) => {
     try {
-        const { find_user, password } = req.body;
+        const { find_employee, password } = req.body;
 
-        if ([find_user, password].some((field) => !field.trim() === "")) {
+        if ([find_employee, password].some((field) => !field.trim() === "")) {
             throw new ApiError(400, "All fields are required");
         }
-        const user = await User.findOne({
-            $or: [{ username: find_user }, { email: find_user }]
+        const employee = await Employee.findOne({
+            $or: [{ employeename: find_employee }, { email: find_employee }]
         });
-        if (!user) {
-            throw new ApiError(401, "Invalid username or password");
+        if (!employee) {
+            throw new ApiError(401, "Invalid employeename or password");
         }
 
-        const isPasswordValid = await bcrypt.compare(password, user.password);
+        const isPasswordValid = await bcrypt.compare(password, employee.password);
 
         if (!isPasswordValid) {
-            throw new ApiError(401, "Invalid username or password");
+            throw new ApiError(401, "Invalid employeename or password");
         }
-        const accessToken = tokenGenerator(user._id);
+        const accessToken = tokenGenerator(employee._id);
         res.status(200).json({
             success: true,
             message: "Login successful",
             data: {
-                _id: user._id,
-                username: user.username,
-                email: user.email,
-                role: user.role,
+                _id: employee._id,
+                employeename: employee.employeename,
+                email: employee.email,
+                role: employee.role,
                 accessToken
             }
         })

@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import authRouter from "./Routes/authRoutes.js";
-import UserRouter from "./Routes/userRoutes.js";
+import EmployeeRouter from "./Routes/employeeRoutes.js";
 import TaskRouter from "./Routes/taskRoutes.js";
 import TaskAssignmentLog from "./Routes/assignmentLogsRoutes.js";
 
@@ -24,7 +24,7 @@ const limiter = rateLimit({
 });
 
 // app.use('/api/v1/auth', limiter);
-// app.use('/api/v1/users', limiter);
+// app.use('/api/v1/employees', limiter);
 // app.use('/api/v1/tasks', limiter);
 // app.use('/api/v1/assignments', limiter);
 
@@ -37,7 +37,7 @@ app.get("/api/v1/test",(req,res)=>{
     });
 })
 app.use('/api/v1/auth',authRouter);
-app.use('/api/v1/users',UserRouter);
+app.use('/api/v1/employees',EmployeeRouter);
 app.use('/api/v1/tasks',TaskRouter);
 app.use('/api/v1/assignments',TaskAssignmentLog);
 

@@ -1,7 +1,7 @@
 import express from 'express';
 import TaskAssignmentLog from '../models/TaskAssignmentLog.js';
 import Task from '../models/Task.js';
-import User from '../models/User.js';
+import Employee from '../models/Employee.js';
 import {verifyJWT,requireAdmin} from "../middleware/Auth.middleware.js"
 
 const router = express.Router();
@@ -35,8 +35,8 @@ router.get('/', verifyJWT, requireAdmin, async (req, res) => {
 
     const assignmentLogs = await TaskAssignmentLog.find(filter)
       .populate('taskId', 'title priority status deadline')
-      .populate('assignedTo', 'username profile department')
-      .populate('assignedBy', 'username profile')
+      .populate('assignedTo', 'employeename profile department')
+      .populate('assignedBy', 'employeename profile')
       .sort(sort);
 
     res.json({
@@ -60,8 +60,8 @@ router.get('/:id', verifyJWT, async (req, res) => {
   try {
     const assignmentLog = await TaskAssignmentLog.findById(req.params.id)
       .populate('taskId', 'title description priority status deadline')
-      .populate('assignedTo', 'username email profile department')
-      .populate('assignedBy', 'username profile');
+      .populate('assignedTo', 'employeename email profile department')
+      .populate('assignedBy', 'employeename profile');
 
     if (!assignmentLog) {
       return res.status(404).json({
@@ -71,12 +71,12 @@ router.get('/:id', verifyJWT, async (req, res) => {
     }
 
     // Check permissions
-    const isInvolvedUser = 
-      req.user.role === 'admin' ||
-      assignmentLog.assignedTo._id.toString() === req.user.userId ||
-      assignmentLog.assignedBy._id.toString() === req.user.userId;
+    const isInvolvedEmployee = 
+      req.employee.role === 'admin' ||
+      assignmentLog.assignedTo._id.toString() === req.employee.employeeId ||
+      assignmentLog.assignedBy._id.toString() === req.employee.employeeId;
 
-    if (!isInvolvedUser) {
+    if (!isInvolvedEmployee) {
       return res.status(403).json({
         success: false,
         message: 'Access denied.'
@@ -121,7 +121,7 @@ router.get('/task/:taskId', verifyJWT, async (req, res) => {
     }
 
     // Check permissions
-    if (req.user.role === 'user' && task.assignedTo?.toString() !== req.user.userId) {
+    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee.employeeId) {
       return res.status(403).json({
         success: false,
         message: 'Access denied.'
@@ -129,8 +129,8 @@ router.get('/task/:taskId', verifyJWT, async (req, res) => {
     }
 
     const assignmentLogs = await TaskAssignmentLog.find({ taskId })
-      .populate('assignedTo', 'username profile department')
-      .populate('assignedBy', 'username profile')
+      .populate('assignedTo', 'employeename profile department')
+      .populate('assignedBy', 'employeename profile')
       .sort({ assignedAt: -1 });
 
     res.json({
@@ -163,7 +163,7 @@ router.get('/employee/:employeeId', verifyJWT, async (req, res) => {
     const { employeeId } = req.params;
 
     // Check permissions
-    if (req.user.role === 'user' && req.user.userId !== employeeId) {
+    if (req.employee.role === 'employee' && req.employee.employeeId !== employeeId) {
       return res.status(403).json({
         success: false,
         message: 'Access denied.'
@@ -171,7 +171,7 @@ router.get('/employee/:employeeId', verifyJWT, async (req, res) => {
     }
 
     // Check if employee exists
-    const employee = await User.findOne({ _id: employeeId, isActive: true });
+    const employee = await Employee.findOne({ _id: employeeId, isActive: true });
     if (!employee) {
       return res.status(404).json({
         success: false,
@@ -181,7 +181,7 @@ router.get('/employee/:employeeId', verifyJWT, async (req, res) => {
 
     const assignmentLogs = await TaskAssignmentLog.find({ assignedTo: employeeId })
       .populate('taskId', 'title priority status deadline')
-      .populate('assignedBy', 'username profile')
+      .populate('assignedBy', 'employeename profile')
       .sort({ assignedAt: -1 });
 
     res.json({
@@ -234,21 +234,21 @@ router.post('/register', verifyJWT, async (req, res) => {
       });
     }
 
-    // Check if assignedTo user exists and is employee
-    const assignedToUser = await User.findOne({
+    // Check if assignedTo employee exists and is employee
+    const assignedToEmployee = await Employee.findOne({
       _id: assignedTo,
       isActive: true
     });
 
-    if (!assignedToUser) {
+    if (!assignedToEmployee) {
       return res.status(400).json({
         success: false,
-        message: 'Assigned user not found or is not active'
+        message: 'Assigned employee not found or is not active'
       });
     }
 
     // Check permissions
-    if (req.user.role === 'user' && task.assignedTo?.toString() !== req.user.userId) {
+    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee.employeeId) {
       return res.status(403).json({
         success: false,
         message: 'Access denied.'
@@ -259,7 +259,7 @@ router.post('/register', verifyJWT, async (req, res) => {
     const assignmentLog = new TaskAssignmentLog({
       taskId,
       assignedTo,
-      assignedBy: req.user.userId,
+      assignedBy: req.employee.employeeId,
       reason,
       status
     });
@@ -268,8 +268,8 @@ router.post('/register', verifyJWT, async (req, res) => {
 
     // Populate for response
     await assignmentLog.populate('taskId', 'title priority status');
-    await assignmentLog.populate('assignedTo', 'username profile department');
-    await assignmentLog.populate('assignedBy', 'username profile');
+    await assignmentLog.populate('assignedTo', 'employeename profile department');
+    await assignmentLog.populate('assignedBy', 'employeename profile');
 
     res.status(201).json({
       success: true,
@@ -347,7 +347,7 @@ router.get('/stats/overview', verifyJWT, requireAdmin, async (req, res) => {
       { $limit: 10 },
       {
         $lookup: {
-          from: 'users',
+          from: 'employees',
           localField: '_id',
           foreignField: '_id',
           as: 'employee'
@@ -358,7 +358,7 @@ router.get('/stats/overview', verifyJWT, requireAdmin, async (req, res) => {
         $project: {
           employee: {
             _id: '$employee._id',
-            username: '$employee.username',
+            employeename: '$employee.employeename',
             profile: '$employee.profile',
             department: '$employee.department'
           },
