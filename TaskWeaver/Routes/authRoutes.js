@@ -3,7 +3,8 @@ import Employee from '../models/employee.model.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import cloudinary from '../db/cloudinary.js';
-import multerSorage from "../middleware/multer.middleware.js"
+import multerSorage from "../middleware/multer.middleware.js";
+import { verifyJWT } from '../middleware/Auth.middleware.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const router = express.Router();
@@ -38,14 +39,15 @@ router.post('/register', multerSorage.single('profile_picture'),async (req, res)
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        const skills = req.body.skills.split(',').map((skill) => skill.trim()).filter((skill) => skill !== "");
+        // Parse skills with null check
+        const skills = req.body.skills ? req.body.skills.split(',').map((skill) => skill.trim()).filter((skill) => skill !== "") : [];
         
-        let profilePicturePath="https://drive.google.com/file/d/1AHSHwtmStNIcEzCsRrKkXOqA2Lbi_dVT/view?usp=sharing";
+        let profilePictureUrl = "";
         if (req.file) {
             try {
                 const dataUri = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
                 const uploadResult = await cloudinary.uploader.upload(dataUri, {
-                    folder: 'Chat-Box',
+                    folder: 'TaskWeaver-Profiles',
                     format: 'webp'
                 });
                 profilePictureUrl = uploadResult.secure_url;
@@ -60,10 +62,10 @@ router.post('/register', multerSorage.single('profile_picture'),async (req, res)
             employeename,
             email,
             password: hashedPassword,
-            profile_picture:profilePicturePath.secure_url,
-            role:'employee',
+            profile_picture: profilePictureUrl,
+            role: 'employee',
             department,
-            DateOfJoining:new Date(),
+            DateOfJoining: new Date(),
             position,
             skills
         });
@@ -88,15 +90,17 @@ router.post('/register', multerSorage.single('profile_picture'),async (req, res)
     }
 })
 
-router.post('login', async (req, res) => {
+router.post('/login', async (req, res) => {
     try {
-        const { find_employee, password } = req.body;
 
-        if ([find_employee, password].some((field) => !field.trim() === "")) {
-            throw new ApiError(400, "All fields are required");
+        const { email, password } = req.body;
+
+
+        if(!email || !password){
+            throw new ApiError("401","email or username and password required");
         }
         const employee = await Employee.findOne({
-            $or: [{ employeename: find_employee }, { email: find_employee }]
+            $or: [{ employeename: email }, { email: email }]
         });
         if (!employee) {
             throw new ApiError(401, "Invalid employeename or password");
@@ -121,6 +125,43 @@ router.post('login', async (req, res) => {
         })
 
     } catch (error) {
+        throw new ApiError(error?.statusCode || 500, error?.message || "Internal Server Error");
+    }
+});
+
+router.get('/me', verifyJWT, async (req, res) => {
+    try {
+        const employeeId = req.employee._id;
+        const employee = await Employee.findById(employeeId).select('-password');           
+        if (!employee) {
+            throw new ApiError(404, "Employee not found");
+        }
+        res.status(200).json({
+            success: true,
+            data: employee
+        });
+    }
+    catch (error) {
+        throw new ApiError(error?.statusCode || 500, error?.message || "Internal Server Error");
+    }
+});
+
+router.put('/profile', verifyJWT, async (req, res) => {
+    try {
+        const employeeId = req.employee._id;
+        const updateData = req.body;
+
+        const updatedEmployee = await Employee.findByIdAndUpdate(employeeId, updateData, { new: true }).select('-password');
+        if (!updatedEmployee) {
+            throw new ApiError(404, "Employee not found");
+        }
+        res.status(200).json({
+            success: true,
+            message: "Profile updated successfully",
+            data: updatedEmployee
+        });
+    }
+    catch (error) {
         throw new ApiError(error?.statusCode || 500, error?.message || "Internal Server Error");
     }
 });

@@ -1,7 +1,7 @@
 import express from 'express';
-import Task from '../models/Task.js';
-import Employee from '../models/Employee.js';
-import TaskAssignmentLog from '../models/TaskAssignmentLog.js';
+import Task from '../models/Task.model.js';
+import Employee from '../models/employee.model.js';
+import TaskAssignmentLog from '../models/AssignmentLog.model.js';
 import { verifyJWT, requireAdmin } from '../middleware/Auth.middleware.js';
 
 const router = express.Router();
@@ -78,7 +78,7 @@ router.post('/', verifyJWT, requireAdmin, async (req, res) => {
       priority: priority || 'medium',
       dueDate: dueDate ? new Date(dueDate) : undefined,
       assignedTo: assignedTo || undefined,
-      assignedBy: req.employee.employeeId,
+      assignedBy: req.employee._id,
       status: assignedTo ? 'assigned' : 'pending'
     });
 
@@ -89,7 +89,7 @@ router.post('/', verifyJWT, requireAdmin, async (req, res) => {
       const assignmentLog = new TaskAssignmentLog({
         taskId: newTask._id,
         assignedTo,
-        assignedBy: req.employee.employeeId,
+        assignedBy: req.employee._id,
         reason: 'Manual assignment during task creation',
         status: 'assigned'
       });
@@ -128,7 +128,7 @@ router.get('/', verifyJWT, async (req, res) => {
 
     // If employee is employee, only show their tasks
     if (req.employee.role === 'employee') {
-      filter.assignedTo = req.employee.employeeId;
+      filter.assignedTo = req.employee._id;
     } else if (assignedTo) {
       // Admin can filter by assignedTo
       filter.assignedTo = assignedTo;
@@ -186,7 +186,7 @@ router.get('/:id', verifyJWT, async (req, res) => {
     }
 
     // Check if employee has access to this task
-    if (req.employee.role === 'employee' && task.assignedTo?._id.toString() !== req.employee.employeeId) {
+    if (req.employee.role === 'employee' && task.assignedTo?._id.toString() !== req.employee._id) {
       return res.status(403).json({
         success: false,
         message: 'Access denied. You can only view tasks assigned to you.'
@@ -228,7 +228,7 @@ router.put('/:id', verifyJWT, async (req, res) => {
     }
 
     // Check permissions
-    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee.employeeId) {
+    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee._id) {
       return res.status(403).json({
         success: false,
         message: 'Access denied.'
@@ -253,7 +253,7 @@ router.put('/:id', verifyJWT, async (req, res) => {
       const assignmentLog = new TaskAssignmentLog({
         taskId: task._id,
         assignedTo: updateData.assignedTo,
-        assignedBy: req.employee.employeeId,
+        assignedBy: req.employee._id,
         reason: 'Task reassigned by admin',
         status: 'reassigned'
       });
@@ -350,7 +350,7 @@ router.post('/:id/assign', verifyJWT, requireAdmin, async (req, res) => {
       const assignmentLog = new TaskAssignmentLog({
         taskId: task._id,
         assignedTo,
-        assignedBy: req.employee.employeeId,
+        assignedBy: req.employee._id,
         reason: 'Manual assignment by admin',
         status: 'assigned'
       });
@@ -384,7 +384,7 @@ router.post('/:id/assign', verifyJWT, requireAdmin, async (req, res) => {
       const assignmentLog = new TaskAssignmentLog({
         taskId: task._id,
         assignedTo: bestEmployee.employee._id,
-        assignedBy: req.employee.employeeId,
+        assignedBy: req.employee._id,
         reason: `Auto-assigned using SJF algorithm. Workload score: ${bestEmployee.priorityScore.toFixed(2)}`,
         status: 'assigned'
       });
@@ -439,7 +439,7 @@ router.patch('/:id/status', verifyJWT, async (req, res) => {
     }
 
     // Check permissions
-    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee.employeeId) {
+    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee._id) {
       return res.status(403).json({
         success: false,
         message: 'Access denied.'
@@ -499,7 +499,7 @@ router.post('/:id/progress', verifyJWT, async (req, res) => {
     }
 
     // Check if employee is assigned to this task
-    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee.employeeId) {
+    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee._id) {
       return res.status(403).json({
         success: false,
         message: 'Access denied. You can only update progress on tasks assigned to you.'
@@ -509,15 +509,15 @@ router.post('/:id/progress', verifyJWT, async (req, res) => {
     // Add progress update
     task.progress.push({
       progress,
-      submittedBy: req.employee.employeeId,
+      submittedBy: req.employee._id,
       submittedAt: new Date()
     });
 
     await task.save();
 
     // Populate for response
-    await task.populate('progress.submittedBy', 'username profile');
-    await task.populate('assignedTo', 'username profile department');
+    await task.populate('progress.submittedBy', 'employeename firstName lastName');
+    await task.populate('assignedTo', 'employeename firstName lastName department');
 
     res.json({
       success: true,
@@ -575,16 +575,16 @@ router.post('/:id/rating', verifyJWT, requireAdmin, async (req, res) => {
     task.adminRating = {
       rating,
       comments: comments || '',
-      ratedBy: req.employee.employeeId,
+      ratedBy: req.employee._id,
       ratedAt: new Date()
     };
 
     await task.save();
 
     // Populate for response
-    await task.populate('adminRating.ratedBy', 'username profile');
-    await task.populate('assignedTo', 'username profile department');
-    await task.populate('progress.submittedBy', 'username profile');
+    await task.populate('adminRating.ratedBy', 'employeename firstName lastName');
+    await task.populate('assignedTo', 'employeename firstName lastName department');
+    await task.populate('progress.submittedBy', 'employeename firstName lastName');
 
     res.json({
       success: true,
@@ -615,7 +615,7 @@ router.get('/stats/overview', verifyJWT, async (req, res) => {
 
     // If employee is employee, only show their stats
     if (req.employee.role === 'employee') {
-      filter.assignedTo = req.employee.employeeId;
+      filter.assignedTo = req.employee._id;
     }
 
     const totalTasks = await Task.countDocuments(filter);

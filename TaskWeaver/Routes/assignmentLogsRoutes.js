@@ -1,7 +1,7 @@
 import express from 'express';
-import TaskAssignmentLog from '../models/TaskAssignmentLog.js';
-import Task from '../models/Task.js';
-import Employee from '../models/Employee.js';
+import TaskAssignmentLog from '../models/AssignmentLog.model.js';
+import Task from '../models/Task.model.js';
+import Employee from '../models/employee.model.js';
 import {verifyJWT,requireAdmin} from "../middleware/Auth.middleware.js"
 
 const router = express.Router();
@@ -73,8 +73,8 @@ router.get('/:id', verifyJWT, async (req, res) => {
     // Check permissions
     const isInvolvedEmployee = 
       req.employee.role === 'admin' ||
-      assignmentLog.assignedTo._id.toString() === req.employee.employeeId ||
-      assignmentLog.assignedBy._id.toString() === req.employee.employeeId;
+      assignmentLog.assignedTo._id.toString() === req.employee._id.toString() ||
+      assignmentLog.assignedBy._id.toString() === req.employee._id.toString();
 
     if (!isInvolvedEmployee) {
       return res.status(403).json({
@@ -121,7 +121,7 @@ router.get('/task/:taskId', verifyJWT, async (req, res) => {
     }
 
     // Check permissions
-    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee.employeeId) {
+    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee._id.toString()) {
       return res.status(403).json({
         success: false,
         message: 'Access denied.'
@@ -163,7 +163,7 @@ router.get('/employee/:employeeId', verifyJWT, async (req, res) => {
     const { employeeId } = req.params;
 
     // Check permissions
-    if (req.employee.role === 'employee' && req.employee.employeeId !== employeeId) {
+    if (req.employee.role === 'employee' && req.employee._id.toString() !== employeeId) {
       return res.status(403).json({
         success: false,
         message: 'Access denied.'
@@ -248,7 +248,7 @@ router.post('/register', verifyJWT, async (req, res) => {
     }
 
     // Check permissions
-    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee.employeeId) {
+    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee._id.toString()) {
       return res.status(403).json({
         success: false,
         message: 'Access denied.'
@@ -259,7 +259,7 @@ router.post('/register', verifyJWT, async (req, res) => {
     const assignmentLog = new TaskAssignmentLog({
       taskId,
       assignedTo,
-      assignedBy: req.employee.employeeId,
+      assignedBy: req.employee._id.toString(),
       reason,
       status
     });
