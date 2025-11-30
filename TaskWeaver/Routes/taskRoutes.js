@@ -176,7 +176,6 @@ router.get('/:id', verifyJWT, async (req, res) => {
     const task = await Task.findById(req.params.id)
       .populate('assignedTo', 'employeename email profile department skills')
       .populate('assignedBy', 'employeename profile')
-      .populate('comments');
 
     if (!task) {
       return res.status(404).json({
@@ -228,7 +227,7 @@ router.put('/:id', verifyJWT, async (req, res) => {
     }
 
     // Check permissions
-    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee._id) {
+    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee._id.toString()) {
       return res.status(403).json({
         success: false,
         message: 'Access denied.'
@@ -439,7 +438,7 @@ router.patch('/:id/status', verifyJWT, async (req, res) => {
     }
 
     // Check permissions
-    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee._id) {
+    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee._id.toString()) {
       return res.status(403).json({
         success: false,
         message: 'Access denied.'
@@ -499,7 +498,7 @@ router.post('/:id/progress', verifyJWT, async (req, res) => {
     }
 
     // Check if employee is assigned to this task
-    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee._id) {
+    if (req.employee.role === 'employee' && task.assignedTo?.toString() !== req.employee._id.toString()) {
       return res.status(403).json({
         success: false,
         message: 'Access denied. You can only update progress on tasks assigned to you.'

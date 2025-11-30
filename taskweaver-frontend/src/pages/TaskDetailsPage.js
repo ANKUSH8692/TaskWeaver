@@ -125,10 +125,6 @@ const TaskDetailsPage = () => {
     }
   };
 
-  if (!isNew && !currentTask && !isAdmin) {
-    return <div>Loading...</div>;
-  }
-
   return (
     <div className="task-details-page">
       <div className="task-form-container">
@@ -227,7 +223,7 @@ const TaskDetailsPage = () => {
     <div className="task-interactions">
       <div className="progress-section">
         <h3>Progress Updates</h3>
-        {employee?.role === 'employee' && currentTask?.assignedTo?._id === employee._id && (
+        {employee?.role === 'employee' && currentTask?.assignedTo?._id === employee.employeeId && (
           <div className="add-progress">
             <textarea
               value={progressUpdate}

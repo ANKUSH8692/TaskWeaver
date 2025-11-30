@@ -31,11 +31,11 @@ const EmployeeDashboard = ({ stats }) => {
           <h3>My Tasks</h3>
           <p>View and manage assigned tasks</p>
         </Link>
-        <Link to="/tasks/in-progress" className="action-card">
+        <Link to="/tasks?status=in-progress" className="action-card">
           <h3>Active Tasks</h3>
           <p>Tasks currently in progress</p>
         </Link>
-        <Link to="/tasks/completed" className="action-card">
+        <Link to="/tasks?status=completed" className="action-card">
           <h3>Completed Tasks</h3>
           <p>View your completed work</p>
         </Link>

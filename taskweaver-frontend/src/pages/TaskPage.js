@@ -17,6 +17,23 @@ const TasksPage = () => {
     search: ''
   });
 
+  // Initialize filters from URL query params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const statusParam = params.get('status');
+    const priorityParam = params.get('priority');
+    const searchParam = params.get('search');
+
+    if (statusParam || priorityParam || searchParam) {
+      setFilters(prev => ({
+        ...prev,
+        status: statusParam || '',
+        priority: priorityParam || '',
+        search: searchParam || ''
+      }));
+    }
+  }, []);
+
   useEffect(() => {
     fetchTasks();
   }, [filters]);
@@ -28,6 +45,8 @@ const TasksPage = () => {
       dispatch(getTasksSuccess(response.data || []));
     } catch (error) {
       console.error('Failed to fetch tasks:', error);
+      // Dispatch empty array to stop loading state on error
+      dispatch(getTasksSuccess([]));
     }
   };
 
